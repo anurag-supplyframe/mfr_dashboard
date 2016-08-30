@@ -40,7 +40,7 @@ raw_past_data as (
 	from warehouse.mfr_part_aggr   mpa
 	inner join warehouse.date_dim dd using(date_key)
 	where nullif(mpa.part_number,'') is not null
-	and date_ord >= (select start_week from time_range )
+	and week_ord >= (select start_week from time_range )
 	and week_ord <= (select end_week from time_range )
 	group by 1 , 2, 3
 ),
