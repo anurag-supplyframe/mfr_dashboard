@@ -1,10 +1,10 @@
-drop table if exists poor_performing_parts_by_mfr_week;
+drop table if exists poor_performing_parts_by_mfr_day;
 
-create table poor_performing_parts_by_mfr_week
+create table poor_performing_parts_by_mfr_day
 (
 	"year" smallint,
-	week_desc varchar(50),
-	week_ord integer,
+	calendar_date date,
+	date_ord integer,
 	mfr_name text,
 	part_number text,
 	historic_mean_clicks_per_week numeric(8,4),
@@ -15,21 +15,23 @@ create table poor_performing_parts_by_mfr_week
 	confidence_met boolean
 );
 
-insert into poor_performing_parts_by_mfr_week
+
+insert into poor_performing_parts_by_mfr_day
 (
-	year , week_desc , week_ord , mfr_name , part_number , historic_mean_clicks_per_week , 
+	year , calendar_date , date_ord , mfr_name , part_number , historic_mean_clicks_per_week , 
 	historic_stdev_per_week, confidence , recent_mean_clicks_per_week , recent_drop_in_clicks , confidence_met
 )
 with 
 time_range as (
 	select 
 		year,
-		week_desc ,
 		week_ord - 26 as start_week, 
 		week_ord - 1  as end_week ,
-		week_ord - 4 as current_start,
-		week_ord - 1 as current_end ,
-		week_ord as processing_week_ord
+		date_ord - 28 as current_start,
+		date_ord - 1 as current_end ,
+		date_ord ,
+		calendar_date as calendar_date_today
+		
 	from warehouse.date_dim where calendar_date = CURRENT_DATE 
 ),
 raw_past_data as (
@@ -38,7 +40,7 @@ raw_past_data as (
 	from warehouse.mfr_part_aggr   mpa
 	inner join warehouse.date_dim dd using(date_key)
 	where nullif(mpa.part_number,'') is not null
-	and week_ord >= (select start_week from time_range )
+	and date_ord >= (select start_week from time_range )
 	and week_ord <= (select end_week from time_range )
 	group by 1 , 2, 3
 ),
@@ -54,13 +56,14 @@ past_data as (
 ),
 current_data_raw as (
 	select 
-		mfr_name , part_number , week_ord , 
+		mfr_name , part_number , 
+		cast ( ( date_ord - (select  current_start from time_range) )/7 as integer) as week_ord , 
 		sum(clicks) clicks_per_week 
 	from warehouse.mfr_part_aggr   mpa
 	inner join warehouse.date_dim dd using(date_key)
 	where nullif(mpa.part_number,'') is not null
-	and week_ord >= (select current_start from time_range )
-	and week_ord <= (select current_end from time_range )
+	and date_ord >= (select current_start from time_range )
+	and date_ord <= (select current_end from time_range )
 	group by 1 , 2, 3
 ),
 current_data as (
@@ -78,8 +81,8 @@ current_data as (
 )
 select 
 	(select year  from time_range ) as year, 
-	(select week_desc  from time_range ) as week_desc,
-	(select processing_week_ord from time_range) as week_ord,
+	(select calendar_date_today  from time_range ) as calendar_date,
+	(select date_ord from time_range) as date_ord,
 	a.mfr_name , 
 	a.part_number, 
 	a.mean_clicks_per_week as historic_mean_clicks_per_week, 
@@ -96,14 +99,15 @@ from
 	--b.recent_drop_in_clicks > 0 
 	;
 
----------------------------------------------------------------------------------------------------------
-drop table if exists  trending_parts_by_mfr_week;
 
-create table trending_parts_by_mfr_week
+---------------------------------------------------------------------------------------------------------
+drop table if exists  trending_parts_by_mfr_day;
+
+create table trending_parts_by_mfr_day
 (
 	"year" smallint,
-	week_desc varchar(50),
-	week_ord integer,
+	calendar_date date,
+	date_ord integer,
 	mfr_name text,
 	part_number text,
 	historic_mean_clicks numeric(8,4),
@@ -115,11 +119,11 @@ create table trending_parts_by_mfr_week
 	
 );
 
-insert into trending_parts_by_mfr_week
+insert into trending_parts_by_mfr_day
 (
 	year,
-	week_desc ,
-	week_ord ,
+	calendar_date ,
+	date_ord ,
 	mfr_name ,
 	part_number ,
 	historic_mean_clicks ,
@@ -133,10 +137,12 @@ with
 time_range as (
 	select 
 		year,
-		week_desc ,
+		calendar_date ,
 		week_ord - 26 as oldest_week,
 		week_ord - 1 as last_week,
-		week_ord curr_week  
+		date_ord - 7 curr_start  ,
+		date_ord - 1 curr_end ,
+		date_ord
 	from warehouse.date_dim where calendar_date = CURRENT_DATE
 	
 ),
@@ -166,14 +172,15 @@ current_data as (
 	from warehouse.mfr_part_aggr   mpa
 	inner join warehouse.date_dim dd using(date_key)
 	where nullif(mpa.part_number,'') is not null
-	and week_ord = (select last_week  from time_range )
+	and date_ord >= (select curr_start  from time_range )
+	and date_ord <= (select curr_end  from time_range )
 	group by 1, 2
 	
 )
 select 	
 	(select year  from time_range ) as year, 
-	(select week_desc  from time_range ) as week_desc,
-	(select curr_week  from time_range ) as week_ord,
+	(select calendar_date  from time_range ) as calendar_date,
+	(select date_ord  from time_range ) as date_ord,
 	p.mfr_name , p.part_number ,  
 	p.mean_clicks as historic_mean_clicks, 
 	p.sigma_pop as historic_std_dev,
